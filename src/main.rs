@@ -1,4 +1,5 @@
-use std::ffi::{c_char, c_void};
+use core::ffi::{c_char, c_void};
+use std::process::ExitCode;
 
 /// A marker type to be embedded into other types just so that they cannot be
 /// constructed externally.
@@ -43,6 +44,7 @@ struct ObjcImageInfo {
 
 #[no_mangle]
 #[link_section = "__DATA_CONST,__objc_imageinfo,regular,no_dead_strip"]
+#[used]
 static __OBJC_IMAGEINFO: ObjcImageInfo = ObjcImageInfo {
     version: 0,
     flags: OBJC_IMAGE_HAS_CATEGORY_CLASS_PROPERTIES,
@@ -50,37 +52,35 @@ static __OBJC_IMAGEINFO: ObjcImageInfo = ObjcImageInfo {
     swift_lang_version: 0,
 };
 
-struct SyncWrap(pub *const c_void);
-unsafe impl Sync for SyncWrap {}
-
 extern "C" {
     #[link_name = "OBJC_CLASS_$_NSNumber"]
     static _OBJC_CLASS___NSNumber: u64;
 
     #[link_name = "objc_msgSend$numberWithInt:"]
-    fn objc_msgSend_numberWithInt(c: *const c_void, _: u32, n: usize) -> *const Object;
+    fn objc_msgSend_numberWithInt(c: *const c_void, unused: u8, n: usize) -> *const Object;
 
     #[link_name = "objc_msgSend$intValue"]
     fn objc_msgSend_intValue(o: *const c_void) -> usize;
 }
 
-// #[link_section = "__DATA_const,__objc_classrefs,regular,no_dead_strip"]
-// #[export_name = "\x01L_OBJC_CLASSLIST_REFERENCES_$_.NSNumber"]
-// static REF: SyncWrap = SyncWrap(unsafe { std::mem::transmute(&_OBJC_CLASS___NSNumber) });
-
-fn main() -> Result<(), ()> {
+#[inline(always)]
+#[allow(non_snake_case)]
+fn objc_getClass_NSNumber() -> *const c_void {
     unsafe {
-        let clazz: *const c_void =
-            core::ptr::read_volatile(&(std::mem::transmute(&_OBJC_CLASS___NSNumber)) as *const _);
+        let class_ptr = &core::intrinsics::transmute(&_OBJC_CLASS___NSNumber) as *const _;
+        #[cfg(debug_assertions)]
+        return core::ptr::read_volatile(class_ptr);
+        #[cfg(not(debug_assertions))]
+        return *class_ptr;
+    }
+}
 
+fn main() -> ExitCode {
+    unsafe {
         // TODO: Write a test that rips through a bunch of NS* Classes, call `hash` and compare.
-        // let clazz2 = objc_getClass("NSNumber\0".as_ptr() as *const _);
-        // assert_eq!(clazz2 as usize, clazz as usize);
-
-        let obj = objc_msgSend_numberWithInt(clazz as *const _, 0, 1234);
+        let clazz: *const c_void = objc_getClass_NSNumber();
+        let obj = objc_msgSend_numberWithInt(clazz as *const _, 0, 123);
         let v: usize = objc_msgSend_intValue(obj as *const _);
-
-        println!("{v}");
-        Ok(())
+        ExitCode::from(v as u8)
     }
 }
