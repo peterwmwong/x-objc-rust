@@ -50,33 +50,37 @@ static __OBJC_IMAGEINFO: ObjcImageInfo = ObjcImageInfo {
     swift_lang_version: 0,
 };
 
+struct SyncWrap(pub *const c_void);
+unsafe impl Sync for SyncWrap {}
+
+extern "C" {
+    #[link_name = "OBJC_CLASS_$_NSNumber"]
+    static _OBJC_CLASS___NSNumber: u64;
+
+    #[link_name = "objc_msgSend$numberWithInt:"]
+    fn objc_msgSend_numberWithInt(c: *const c_void, _: u32, n: usize) -> *const Object;
+
+    #[link_name = "objc_msgSend$intValue"]
+    fn objc_msgSend_intValue(o: *const c_void) -> usize;
+}
+
+// #[link_section = "__DATA_const,__objc_classrefs,regular,no_dead_strip"]
+// #[export_name = "\x01L_OBJC_CLASSLIST_REFERENCES_$_.NSNumber"]
+// static REF: SyncWrap = SyncWrap(unsafe { std::mem::transmute(&_OBJC_CLASS___NSNumber) });
+
 fn main() -> Result<(), ()> {
     unsafe {
-        extern "C" {
-            // #[link_name = "OBJC_CLASS_$_NSNumber"]
-            // static _OBJC_CLASS___NSNumber: u64;
+        let clazz: *const c_void =
+            core::ptr::read_volatile(&(std::mem::transmute(&_OBJC_CLASS___NSNumber)) as *const _);
 
-            #[link_name = "objc_msgSend$numberWithInt:"]
-            fn objc_msgSend_numberWithInt(c: *const c_void, _: u32, n: usize) -> *const Object;
+        // TODO: Write a test that rips through a bunch of NS* Classes, call `hash` and compare.
+        // let clazz2 = objc_getClass("NSNumber\0".as_ptr() as *const _);
+        // assert_eq!(clazz2 as usize, clazz as usize);
 
-            #[link_name = "objc_msgSend$intValue"]
-            fn objc_msgSend_intValue(o: *const c_void) -> usize;
-        }
-        // let _OBJC_CLASS___NSNumber: usize = 0x1dc46c8c0;
-        // let clazz = _OBJC_CLASS___NSNumber as *const Class;
-        let clazz = objc_getClass("NSNumber\0".as_ptr() as *const _);
-
-        // let imp: unsafe extern "C" fn(*const Class, u32, usize) -> *const Object =
-        //     std::mem::transmute(objc_msgSend_numberWithInt as unsafe extern "C" fn());
-        // let obj = imp(clazz, 0, 123);
         let obj = objc_msgSend_numberWithInt(clazz as *const _, 0, 1234);
-
-        // let imp: unsafe extern "C" fn(*const Object) -> usize =
-        //     std::mem::transmute(objc_msgSend_intValue as unsafe extern "C" fn());
-        // let v: usize = imp(obj);
         let v: usize = objc_msgSend_intValue(obj as *const _);
 
-        dbg!(v);
+        println!("{v}");
         Ok(())
     }
 }
